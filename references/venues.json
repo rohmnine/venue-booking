@@ -1,0 +1,153 @@
+{
+  "_readme": [
+    "场馆预约监测配置。新增一个「小程序」= 复制一个 venue 对象，改 3 处：",
+    "  1) id / name / miniprogram  —— 标识与小程序链接",
+    "  2) request  —— 抓包拿到的接口地址、请求头、请求体",
+    "  3) response —— 告诉引擎从响应 JSON 的哪一层读场次、哪个字段是时间/状态/场地/价格",
+    "",
+    "【两种查询方式，二选一】",
+    "  A. 按日期查：request.url 里用 ${DATE} 占位，配 dates.offsets（默认方式）",
+    "  B. 按排期号查：request.url 里用 ${TIMETABLE_ID} 占位，配 timetable_ids（xx市体育馆就是这种）",
+    "     —— 因为该接口按 timetableId 查询，id 与日期绑定、且只在该日期放号后才存在。",
+    "     mode=scan 时引擎会扫描 id 区间，按响应里的真实日期归组，从而自动发现「新放出来的日期」。",
+    "",
+    "【两种响应形态，引擎自动识别】",
+    "  A. 扁平型：slots_path 直接指向场次数组",
+    "  B. 嵌套型：slots_path 指向「时段数组」，再用 children_field 指到时段里的「场地数组」",
+    "     —— xx市体育馆：data.timeList[].groundJson[]，book=0 即可订，price=9999 为不开放占位",
+    "",
+    "抓包步骤见 references/recon-playbook.md。request.url 为空的场馆会被 doctor/check 自动跳过。",
+    "",
+    "【enabled 才是真正的开关】",
+    "  enabled=false 的场馆会被 check / watch 跳过；字段缺省视为启用（兼容老配置）。",
+    "  想临时只跑某一个（哪怕它是禁用的），用 -v <id> 显式点名即可。",
+    "  doctor 会显示哪些场馆被跳过，并汇总「已启用 N / M」。",
+    "  若所有场馆都是 enabled=false，check/watch 会直接报错退出，不会静默什么都不做。",
+    "",
+    "【三步跑起来】",
+    "  1) python scripts/venue_monitor.py selftest   # 离线自检，验证引擎本身正常（不联网）",
+    "  2) python scripts/venue_monitor.py check      # 跑一次内置演示场馆（mock，不联网）",
+    "  3) 抓包接自己的小程序 -> 见 references/recon-playbook.md",
+    "  完整步骤见 README.md。",
+    "",
+    "【推送怎么配】",
+    "  venue.notify.webhook_url 填了才会推送（feishu / wecom / serverchan / pushplus / bark）。",
+    "  不填 = 只落盘报告、不推送。见 references/notify-setup.md。",
+    "",
+    "  ⚠️ 推送规则：只在「出现新空位」时才推。所以飞书安静 ≠ 没有空位，",
+    "     而是「这段时间没有新场放出来」。想消除这个歧义就配 notify.daily_digest_at ——",
+    "     设了它，每天该时刻会补发一条「当前空场一览」摘要（当天只发一次），",
+    "     用来确认系统还活着。",
+    "",
+    "⚠️ 配置里含登录凭证（JAuthorization / Token），请勿提交到公开仓库。",
+    "   要分享给别人时用 scripts/make-share-package.py 生成净化副本，别直接拷这个文件。",
+    "",
+    "【这份配置是模板】",
+    "  demo-venue     : 内置 mock，无需联网。默认启用，用来验证引擎能跑通。",
+    "                   确认能跑之后，把它改成 enabled=false。",
+    "  another-venue  : 扩展模板。照着填完自己的小程序后 enabled=true。",
+    "",
+    "怎么填见 references/recon-playbook.md 与 references/extending-and-sharing.md。",
+    "",
+    "【本版本不含自动下单】",
+    "  自动下单 / 锁场属于**场馆特定逻辑** —— 每个场馆的下单接口、参数名、",
+    "  锁单时限都不一样，无法做成通用配置。",
+    "  本版本只做「监测 + 提醒」，抢到后请自行到小程序下单。"
+  ],
+  "state_dir": "../state",
+  "venues": [
+    {
+      "id": "demo-venue",
+      "name": "演示场馆（内置 mock，无需联网）",
+      "miniprogram": "(mock)",
+      "enabled": true,
+      "note": "用于验证引擎链路是否正常。mock_window_days 模拟「提前几天放号」，mock_release_hour 模拟「每天几点放号」。",
+      "request": {
+        "mock": true,
+        "mock_window_days": 7,
+        "mock_release_hour": 21
+      },
+      "response": {
+        "slots_path": "data.list",
+        "time_field": "startTime",
+        "available_field": "status",
+        "available_values": [
+          "free"
+        ],
+        "court_field": "courtName",
+        "price_field": "price"
+      },
+      "dates": {
+        "offsets": [
+          1,
+          3,
+          6,
+          7,
+          8,
+          30
+        ],
+        "date_format": "%Y-%m-%d"
+      },
+      "watch": {
+        "time_windows": [
+          "18:00-22:00"
+        ]
+      }
+    },
+    {
+      "_comment": "↓↓↓ 扩展其他小程序：复制下面这个模板 ↓↓↓",
+      "id": "another-venue",
+      "name": "某某体育馆",
+      "miniprogram": "#小程序://某某体育馆/xxxxxxxx",
+      "enabled": false,
+      "request": {
+        "method": "GET",
+        "url": "https://example.com/api/slots?date=${DATE}&siteId=1",
+        "_headers_note": "把抓包得到的请求头原样粘进来。凭证（Authorization / JAuthorization / Token 之类）直接写整串，不要写成 ${TOKEN} —— 引擎只认 ${DATE} ${TIMETABLE_ID} ${TS} ${VENUE_ID} 四个占位符，其他 ${...} 会原样发出去，看起来像「接口没返回数据」，很难查。另外请求头只允许 ASCII，别把中文说明文字留在值里。",
+        "headers": {
+          "Referer": "https://servicewechat.com/",
+          "Authorization": "PASTE_CAPTURED_TOKEN_HERE"
+        },
+        "timeout": 15
+      },
+      "response": {
+        "slots_path": "data.slots",
+        "time_field": "startTime",
+        "available_field": "status",
+        "available_values": [
+          "1",
+          "可预约"
+        ],
+        "court_field": "courtName",
+        "price_field": "price"
+      },
+      "dates": {
+        "offsets": [
+          0,
+          1,
+          2
+        ],
+        "date_format": "%Y-%m-%d"
+      },
+      "watch": {
+        "time_windows": []
+      },
+      "_schedule_note": "加密轮询窗口。window 内每 poll_interval 秒跑一次。用 `release -v <id>` 观测几天放号时刻后回来填。quiet_before 之前的时段静默退出；keep_output_days 控制报告保留天数。",
+      "schedule": {
+        "poll_windows": [
+          "08:50-10:30"
+        ],
+        "poll_interval": 90,
+        "lead_minutes": 60,
+        "quiet_before": "06:00",
+        "keep_output_days": 30
+      },
+      "_notify_note": "填了 webhook_url 才会推送。type 可选 wecom(企业微信/钉钉) / feishu / serverchan / pushplus / bark / generic；飞书若开了「签名校验」还要填 feishu_secret。daily_digest_at 设了就每天该时刻补发一条「当前空场一览」摘要（当天只发一次），用来确认系统还活着 —— 因为告警只在「有新空位」时才推，安静时无法区分「没变化」和「程序挂了」；留空 = 不启用。max_slots_in_message 限制单条最多列几个时段（默认 12）。include_report_path 默认 false，即不把本地报告路径塞进消息。详见 references/notify-setup.md",
+      "notify": {
+        "type": "feishu",
+        "webhook_url": "",
+        "daily_digest_at": "10:35"
+      }
+    }
+  ]
+}

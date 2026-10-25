@@ -1,0 +1,18 @@
+# 运行时产物（含真实场次快照、日志）
+state/
+*.log
+*.bak
+__pycache__/
+*.pyc
+
+# 抓包与凭证 —— 绝对不要提交，里面有你的登录凭证
+*.chlz
+*.chls
+*.har
+抓包*.txt
+curl*.txt
+session*.txt
+
+# 本地产物
+share/
+share-public/
